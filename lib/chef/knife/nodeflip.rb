@@ -1,6 +1,7 @@
 ## Based on https://gist.github.com/961827 by nstielau
 
-
+# shut up, right_aws
+RAILS_DEFAULT_LOGGER = Logger.new("/dev/null")
 require 'chef/knife'
 require 'colorize'
 
@@ -20,6 +21,12 @@ module KnifeFlip
       :boolean => true,
       :on => :tail,
       :description => 'Preview the target environment to see affected cookbooks'
+
+    option :amazon,
+      :long => '--amazon',
+      :boolean => true,
+      :on => :tail,
+      :description => 'Preview the target node\'s Amazon tag changes'
 
     def run
       unless @node_name = name_args[0]
@@ -62,6 +69,20 @@ module KnifeFlip
         puts "Setting environment to #{@environment}"
         node.chef_environment(@environment)
         node.save
+
+        if config[:amazon]
+          require 'right_aws'
+          aws_access_key_id = Chef::Config[:knife][:aws_access_key_id]
+          aws_secret_access_key = Chef::Config[:knife][:aws_secret_access_key]
+          @ec2   = RightAws::Ec2.new(aws_access_key_id,
+                            aws_secret_access_key)
+          puts "Setting Amzn tag for #{node.attributes['fqdn']} (#{node.attributes['ec2']['instance_id']}) to #{@environment}"
+          begin
+            @ec2.create_tags(node.attributes['ec2']['instance_id'], {"env" => @environment})
+          rescue Exception
+            STDERR.puts "uh oh - looks like something went wrong with Amazon..."
+          end
+        end
 
         knife_search = Chef::Knife::Search.new
         # ensure that 'start' and 'rows' are set since we don't seem to properly inherit the +config+ hash and therefore don't get sane defaults
